@@ -2,7 +2,7 @@
 // @id             drone-path-planner
 // @name           IITC Plugin: Drone Path Planner
 // @category       Layer
-// @version        0.1.0
+// @version        0.2.0
 // @description    Calculates minimum-hop drone routes between two portals
 // @include        https://intel.ingress.com/*
 // @include        https://intel-x.ingress.com/*
@@ -142,10 +142,12 @@ function createAstar(startGuid, goalGuid, getNeighbours, heuristic) {
   };
 }
 
-// ─── IITC wrapper (added in later tasks) ─────────────────────────────────────
+// ─── IITC wrapper ─────────────────────────────────────────────────────────────
 
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function() {};
+  // Prevent double-initialisation when both IITC plugin system and Tampermonkey load the script
+  if (window.plugin.dronePathPlanner) return;
 
   const P = window.plugin.dronePathPlanner = {};
   const MAX_PANS    = 20;
@@ -154,11 +156,41 @@ function wrapper(plugin_info) {
   // ─── CSS ──────────────────────────────────────────────────────────────────
   const style = document.createElement('style');
   style.textContent = `
-    #drone-planner-panel { padding: 8px; border-top: 1px solid #555; margin-top: 8px; }
-    #drone-planner-panel h3 { margin: 0 0 6px; font-size: 14px; color: #eee; }
-    #drone-planner-panel .dp-info { font-size: 12px; color: #ccc; margin-bottom: 4px; }
-    #drone-planner-panel .dp-status { font-size: 11px; color: #aaa; margin-bottom: 4px; }
-    #drone-planner-panel button { margin: 4px 2px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+    #drone-planner-float {
+      position: fixed;
+      top: 60px;
+      right: 10px;
+      width: 250px;
+      background: #1e1e1e;
+      border: 1px solid #555;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+      z-index: 8000;
+      color: #eee;
+      font-family: sans-serif;
+    }
+    #drone-planner-float .dp-titlebar {
+      background: #2a2a2a;
+      padding: 6px 10px;
+      cursor: move;
+      border-radius: 6px 6px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: bold;
+    }
+    #drone-planner-float .dp-titlebar #dp-toggle {
+      cursor: pointer;
+      opacity: 0.7;
+      padding: 0 2px;
+    }
+    #drone-planner-float .dp-body { padding: 8px 10px; }
+    .dp-info   { font-size: 12px; color: #ccc; margin-bottom: 4px; }
+    .dp-status { font-size: 11px; color: #aaa; margin-bottom: 4px; }
+    #drone-planner-float button {
+      margin: 4px 2px; padding: 4px 8px; cursor: pointer; font-size: 12px;
+    }
     #dp-list { max-height: 200px; overflow-y: auto; padding-left: 18px; margin: 4px 0; }
     #dp-list li { font-size: 11px; color: #bbb; margin: 2px 0; cursor: pointer; }
     #dp-list li:hover { color: #fff; }
@@ -171,7 +203,7 @@ function wrapper(plugin_info) {
   `;
   document.head.appendChild(style);
 
-  // ─── Module stubs (replaced in subsequent tasks) ──────────────────────────
+  // ─── Selection module ─────────────────────────────────────────────────────
   P.Selection = {
     startGuid: null,
     endGuid: null,
@@ -179,8 +211,6 @@ function wrapper(plugin_info) {
     _endMarker: null,
 
     init() {
-      // portalDetailsUpdated fires after IITC builds the sidebar portal panel
-      // on both left-click and right-click (any portal selection)
       window.addHook('portalDetailsUpdated', this._onPortalDetailsUpdated.bind(this));
     },
 
@@ -200,13 +230,13 @@ function wrapper(plugin_info) {
 
       const linkS = document.createElement('a');
       linkS.href = '#';
-      linkS.textContent = '✈ 设为 Drone 起点';
+      linkS.textContent = '✈ Set as Drone Start';
       linkS.style.cssText = 'display:block;padding:3px 0;color:#6cf;cursor:pointer';
       linkS.addEventListener('click', e => { e.preventDefault(); self.setStart(guid); });
 
       const linkE = document.createElement('a');
       linkE.href = '#';
-      linkE.textContent = '✈ 设为 Drone 终点';
+      linkE.textContent = '✈ Set as Drone End';
       linkE.style.cssText = 'display:block;padding:3px 0;color:#6cf;cursor:pointer';
       linkE.addEventListener('click', e => { e.preventDefault(); self.setEnd(guid); });
 
@@ -255,6 +285,8 @@ function wrapper(plugin_info) {
       P.Renderer.updateSelectionUI(null, null);
     }
   };
+
+  // ─── Graph module ─────────────────────────────────────────────────────────
   P.Graph = {
     getPortalNode(guid) {
       const p = window.portals[guid];
@@ -279,6 +311,8 @@ function wrapper(plugin_info) {
       return result;
     }
   };
+
+  // ─── Pathfinder module ────────────────────────────────────────────────────
   P.Pathfinder = {
     _searcher: null,
     _running:  false,
@@ -290,18 +324,18 @@ function wrapper(plugin_info) {
       this.abort();
 
       if (startGuid === goalGuid) {
-        P.Renderer.setStatus('起终点相同'); return;
+        P.Renderer.setStatus('Start and end are the same'); return;
       }
       if (window.map.getZoom() < 15) {
-        P.Renderer.setStatus('请放大地图至 15 级以上再计算'); return;
+        P.Renderer.setStatus('Zoom to level 15 or above first'); return;
       }
       const startNode = P.Graph.getPortalNode(startGuid);
       if (!startNode) {
-        P.Renderer.setStatus('起点 portal 未加载，请将其移入视野后重试'); return;
+        P.Renderer.setStatus('Start portal not loaded — move it into view first'); return;
       }
       const goalNode = P.Graph.getPortalNode(goalGuid);
       if (!goalNode) {
-        P.Renderer.setStatus('终点 portal 未加载，请将其移入视野后重试'); return;
+        P.Renderer.setStatus('End portal not loaded — move it into view first'); return;
       }
 
       this._running  = true;
@@ -318,7 +352,7 @@ function wrapper(plugin_info) {
         }
       );
 
-      P.Renderer.setStatus('搜索中…');
+      P.Renderer.setStatus('Searching…');
       this._step();
     },
 
@@ -369,8 +403,6 @@ function wrapper(plugin_info) {
         const best     = this._searcher.getBestOpenNode();
         const goalNode = P.Graph.getPortalNode(this._goalGuid);
 
-        // Determine pan target: midpoint between best open node and goal,
-        // or goal itself when openSet is empty (all nodes frozen at data boundary).
         let panTarget = goalNode ? [goalNode.lat, goalNode.lng] : null;
         if (best && goalNode) {
           const fromNode = P.Graph.getPortalNode(best.guid);
@@ -381,7 +413,6 @@ function wrapper(plugin_info) {
         }
 
         if (!panTarget) {
-          // No coordinates available to pan toward — treat as no_path
           this._running = false;
           P.Renderer.showGap(
             this._findClosestToGoal(this._searcher.getClosedSet()),
@@ -390,7 +421,7 @@ function wrapper(plugin_info) {
           return;
         }
 
-        P.Renderer.setStatus(`搜索中… 第 ${this._panCount} 次平移加载`);
+        P.Renderer.setStatus(`Searching… (pan ${this._panCount})`);
         window.map.setView(panTarget, 15);
 
         const self = this;
@@ -419,6 +450,8 @@ function wrapper(plugin_info) {
       }
     }
   };
+
+  // ─── Renderer module ──────────────────────────────────────────────────────
   P.Renderer = {
     _layer: null,
 
@@ -430,18 +463,60 @@ function wrapper(plugin_info) {
     },
 
     _buildPanel() {
+      // Floating panel appended to body (not sidebar)
       const panel = document.createElement('div');
-      panel.id = 'drone-planner-panel';
+      panel.id = 'drone-planner-float';
       panel.innerHTML = `
-        <h3>Drone Path Planner</h3>
-        <div class="dp-info" id="dp-start">起点：未选择</div>
-        <div class="dp-info" id="dp-end">终点：未选择</div>
-        <div class="dp-status" id="dp-status"></div>
-        <button id="dp-calc" style="display:none">开始计算</button>
-        <button id="dp-clear" style="display:none">清除路径</button>
-        <ol id="dp-list" style="display:none"></ol>
+        <div class="dp-titlebar">
+          <span>✈ Drone Path Planner</span>
+          <span id="dp-toggle">▾</span>
+        </div>
+        <div class="dp-body" id="dp-body">
+          <div class="dp-info" id="dp-start">Start: None</div>
+          <div class="dp-info" id="dp-end">End: None</div>
+          <div class="dp-status" id="dp-status"></div>
+          <button id="dp-calc" style="display:none">Calculate</button>
+          <button id="dp-clear" style="display:none">Clear</button>
+          <ol id="dp-list" style="display:none"></ol>
+        </div>
       `;
-      document.getElementById('sidebar').appendChild(panel);
+      document.body.appendChild(panel);
+
+      // Collapse / expand
+      document.getElementById('dp-toggle').addEventListener('click', () => {
+        const body = document.getElementById('dp-body');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        document.getElementById('dp-toggle').textContent = collapsed ? '▾' : '▸';
+      });
+
+      // Drag
+      const titlebar = panel.querySelector('.dp-titlebar');
+      let drag = null;
+      titlebar.addEventListener('mousedown', e => {
+        if (e.target.id === 'dp-toggle') return;
+        drag = { x: e.clientX - panel.offsetLeft, y: e.clientY - panel.offsetTop };
+      });
+      document.addEventListener('mousemove', e => {
+        if (!drag) return;
+        panel.style.left  = (e.clientX - drag.x) + 'px';
+        panel.style.top   = (e.clientY - drag.y) + 'px';
+        panel.style.right = 'auto';
+      });
+      document.addEventListener('mouseup', () => { drag = null; });
+
+      // Toolbox toggle link
+      const toolbox = document.getElementById('toolbox');
+      if (toolbox) {
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = 'Drone Planner';
+        link.addEventListener('click', e => {
+          e.preventDefault();
+          panel.style.display = panel.style.display === 'none' ? '' : 'none';
+        });
+        toolbox.appendChild(link);
+      }
 
       document.getElementById('dp-calc').addEventListener('click', () => {
         P.Pathfinder.run(P.Selection.startGuid, P.Selection.endGuid);
@@ -454,8 +529,8 @@ function wrapper(plugin_info) {
     },
 
     updateSelectionUI(startTitle, endTitle) {
-      document.getElementById('dp-start').textContent = '起点：' + (startTitle || '未选择');
-      document.getElementById('dp-end').textContent   = '终点：' + (endTitle   || '未选择');
+      document.getElementById('dp-start').textContent = 'Start: ' + (startTitle || 'None');
+      document.getElementById('dp-end').textContent   = 'End: '   + (endTitle   || 'None');
       const canCalc = !!(P.Selection.startGuid && P.Selection.endGuid);
       document.getElementById('dp-calc').style.display = canCalc ? '' : 'none';
     },
@@ -496,8 +571,9 @@ function wrapper(plugin_info) {
         this._layer.addLayer(marker);
       });
 
+      const hops = path.length - 1;
       const totalDist = nodes.slice(1).reduce((s, n, i) => s + haversine(nodes[i], n), 0);
-      this.setStatus(`共 ${path.length - 1} 跳，总距离 ${(totalDist / 1000).toFixed(2)} km`);
+      this.setStatus(`${hops} hop${hops !== 1 ? 's' : ''}, total ${(totalDist / 1000).toFixed(2)} km`);
 
       const list = document.getElementById('dp-list');
       list.style.display = '';
@@ -526,7 +602,7 @@ function wrapper(plugin_info) {
       this.clear();
       const from = P.Graph.getPortalNode(closestGuid);
       const to   = P.Graph.getPortalNode(goalGuid);
-      if (!from || !to) { this.setStatus('无法到达（portal 数据不足）'); return; }
+      if (!from || !to) { this.setStatus('Unreachable (insufficient portal data)'); return; }
 
       this._layer.addLayer(L.polyline(
         [[from.lat, from.lng], [to.lat, to.lng]],
@@ -538,7 +614,7 @@ function wrapper(plugin_info) {
       }));
 
       const gapDist = Math.round(haversine(from, to));
-      this.setStatus(`无法到达。断点距离：${gapDist} m（超出 ${MAX_HOP_DIST} m 限制）`);
+      this.setStatus(`Unreachable. Gap: ${gapDist} m (limit: ${MAX_HOP_DIST} m)`);
       document.getElementById('dp-clear').style.display = '';
     },
 

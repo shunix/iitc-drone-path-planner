@@ -7,7 +7,7 @@ const PLUGIN_CODE = fs.readFileSync(
   'utf8'
 );
 
-// Portals arranged in a line ~400m apart (well within 550m hop limit).
+// Portals arranged in a line ~400m apart (well within 500m hop limit).
 // At lat=0: 0.004 degrees lng ≈ 445m.
 const TEST_PORTALS = [
   { guid: 'p-A', lat: 0, lng: 0,     title: 'Portal A' },
@@ -29,12 +29,14 @@ function buildMockPage(portals) {
     html, body { margin: 0; padding: 0; height: 100%; }
     #map { width: 800px; height: 600px; }
     #sidebar { width: 300px; background: #222; color: #eee; padding: 8px; }
+    #toolbox { padding: 4px 8px; }
     #portaldetails { padding: 8px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="sidebar">
+    <div id="toolbox"></div>
     <div id="portaldetails"></div>
   </div>
   <script>
@@ -80,8 +82,6 @@ function buildMockPage(portals) {
       marker.addTo(window.map);
       window.portals[def.guid] = marker;
 
-      // Mirror IITC: clicking or right-clicking a portal calls renderPortalDetails,
-      // which eventually fires portalDetailsUpdated.
       marker.on('click contextmenu', function() {
         window.runHooks('portalDetailsUpdated', {
           guid: def.guid,
@@ -91,6 +91,10 @@ function buildMockPage(portals) {
         });
       });
     });
+
+    // ── selectPortal / renderPortalDetails stubs ──────────────────────────────
+    window.selectPortal = function(guid) {};
+    window.renderPortalDetails = function(guid) {};
 
     // ── boot flag ─────────────────────────────────────────────────────────────
     window.iitcLoaded = true;
@@ -104,15 +108,14 @@ async function loadPlugin(page) {
   await page.setContent(buildMockPage(TEST_PORTALS), { waitUntil: 'networkidle' });
   await page.addScriptTag({ content: PLUGIN_CODE });
   await page.evaluate(() => {
-    if (!document.getElementById('drone-planner-panel') && window.bootPlugins.length) {
+    if (!document.getElementById('drone-planner-float') && window.bootPlugins.length) {
       window.bootPlugins[0]();
     }
   });
-  await page.waitForSelector('#drone-planner-panel', { timeout: 5000 });
+  await page.waitForSelector('#drone-planner-float', { timeout: 5000 });
 }
 
-// Simulate IITC firing portalDetailsUpdated for a portal (as happens on click/right-click)
-// then click one of the injected drone action links.
+// Simulate IITC firing portalDetailsUpdated for a portal then click one of the injected links.
 async function detailsClick(page, guid, text) {
   await page.evaluate((g) => {
     window.runHooks('portalDetailsUpdated', {
@@ -127,17 +130,17 @@ async function detailsClick(page, guid, text) {
 }
 
 async function selectStartEnd(page, startGuid, endGuid) {
-  await detailsClick(page, startGuid, '设为 Drone 起点');
-  await detailsClick(page, endGuid,   '设为 Drone 终点');
+  await detailsClick(page, startGuid, 'Set as Drone Start');
+  await detailsClick(page, endGuid,   'Set as Drone End');
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 test.describe('Drone Planner – initial load', () => {
-  test('sidebar panel created with default state', async ({ page }) => {
+  test('floating panel created with default state', async ({ page }) => {
     await loadPlugin(page);
-    await expect(page.locator('#dp-start')).toHaveText('起点：未选择');
-    await expect(page.locator('#dp-end')).toHaveText('终点：未选择');
+    await expect(page.locator('#dp-start')).toHaveText('Start: None');
+    await expect(page.locator('#dp-end')).toHaveText('End: None');
     await expect(page.locator('#dp-calc')).toBeHidden();
     await expect(page.locator('#dp-clear')).toBeHidden();
   });
@@ -151,50 +154,47 @@ test.describe('Drone Planner – portal selection via portal details panel', () 
       guid: 'p-A', portal: window.portals['p-A'], portalDetails: {}, portalData: {}
     }));
     await page.waitForSelector('#dp-portal-actions');
-    await expect(page.locator('#dp-portal-actions a').filter({ hasText: '设为 Drone 起点' })).toBeVisible();
-    await expect(page.locator('#dp-portal-actions a').filter({ hasText: '设为 Drone 终点' })).toBeVisible();
+    await expect(page.locator('#dp-portal-actions a').filter({ hasText: 'Set as Drone Start' })).toBeVisible();
+    await expect(page.locator('#dp-portal-actions a').filter({ hasText: 'Set as Drone End' })).toBeVisible();
   });
 
-  test('clicking 起点 updates sidebar start label', async ({ page }) => {
-    await detailsClick(page, 'p-A', '设为 Drone 起点');
-    await expect(page.locator('#dp-start')).toHaveText('起点：Portal A');
+  test('clicking Start updates floating panel start label', async ({ page }) => {
+    await detailsClick(page, 'p-A', 'Set as Drone Start');
+    await expect(page.locator('#dp-start')).toHaveText('Start: Portal A');
     await expect(page.locator('#dp-calc')).toBeHidden();
   });
 
-  test('clicking 终点 updates sidebar end label', async ({ page }) => {
-    await detailsClick(page, 'p-C', '设为 Drone 终点');
-    await expect(page.locator('#dp-end')).toHaveText('终点：Portal C');
+  test('clicking End updates floating panel end label', async ({ page }) => {
+    await detailsClick(page, 'p-C', 'Set as Drone End');
+    await expect(page.locator('#dp-end')).toHaveText('End: Portal C');
     await expect(page.locator('#dp-calc')).toBeHidden();
   });
 
-  test('setting both portals reveals 开始计算 button', async ({ page }) => {
+  test('setting both portals reveals Calculate button', async ({ page }) => {
     await selectStartEnd(page, 'p-A', 'p-C');
     await expect(page.locator('#dp-calc')).toBeVisible();
   });
 
   test('S marker appears on map after setting start', async ({ page }) => {
-    await detailsClick(page, 'p-A', '设为 Drone 起点');
+    await detailsClick(page, 'p-A', 'Set as Drone Start');
     await expect(page.locator('.drone-start-label')).toBeVisible();
     await expect(page.locator('.drone-start-label')).toHaveText('S');
   });
 
   test('E marker appears on map after setting end', async ({ page }) => {
-    await detailsClick(page, 'p-C', '设为 Drone 终点');
+    await detailsClick(page, 'p-C', 'Set as Drone End');
     await expect(page.locator('.drone-end-label')).toBeVisible();
     await expect(page.locator('.drone-end-label')).toHaveText('E');
   });
 
   test('re-selecting a portal replaces the action buttons', async ({ page }) => {
-    // Select p-A
     await page.evaluate(() => window.runHooks('portalDetailsUpdated', {
       guid: 'p-A', portal: window.portals['p-A'], portalDetails: {}, portalData: {}
     }));
     await page.waitForSelector('#dp-portal-actions');
-    // Select p-C – old buttons replaced
     await page.evaluate(() => window.runHooks('portalDetailsUpdated', {
       guid: 'p-C', portal: window.portals['p-C'], portalDetails: {}, portalData: {}
     }));
-    // Only one #dp-portal-actions should exist
     await expect(page.locator('#dp-portal-actions')).toHaveCount(1);
   });
 });
@@ -206,10 +206,9 @@ test.describe('Drone Planner – path finding', () => {
     await selectStartEnd(page, 'p-A', 'p-C');
     await page.locator('#dp-calc').click();
 
-    await expect(page.locator('#dp-status')).toContainText('跳', { timeout: 10000 });
-    expect(await page.locator('#dp-status').textContent()).toMatch(/2\s*跳/);
+    await expect(page.locator('#dp-status')).toContainText('hop', { timeout: 10000 });
+    expect(await page.locator('#dp-status').textContent()).toMatch(/2\s*hop/);
 
-    // Blue drone-path polyline rendered
     await expect(page.locator('.leaflet-overlay-pane path[stroke="#f4c20d"]')).toBeVisible();
     await expect(page.locator('#dp-list li')).toHaveCount(3);
     await expect(page.locator('#dp-clear')).toBeVisible();
@@ -218,41 +217,40 @@ test.describe('Drone Planner – path finding', () => {
   test('1-hop path for adjacent portals A→B', async ({ page }) => {
     await selectStartEnd(page, 'p-A', 'p-B');
     await page.locator('#dp-calc').click();
-    await expect(page.locator('#dp-status')).toContainText('1 跳', { timeout: 10000 });
+    await expect(page.locator('#dp-status')).toContainText('1 hop', { timeout: 10000 });
     await expect(page.locator('#dp-list li')).toHaveCount(2);
   });
 
   test('gap detection when target is isolated', async ({ page }) => {
     await selectStartEnd(page, 'p-A', 'p-Z');
     await page.locator('#dp-calc').click();
-    await expect(page.locator('#dp-status')).toContainText('无法到达', { timeout: 15000 });
-    // Red gap elements rendered (dashed polyline + 550m circle, both red)
+    await expect(page.locator('#dp-status')).toContainText('Unreachable', { timeout: 15000 });
     await expect(page.locator('.leaflet-overlay-pane path[stroke="#ea4335"]').first()).toBeVisible();
   });
 
-  test('clear button resets map and sidebar', async ({ page }) => {
+  test('clear button resets map and floating panel', async ({ page }) => {
     await selectStartEnd(page, 'p-A', 'p-C');
     await page.locator('#dp-calc').click();
-    await expect(page.locator('#dp-status')).toContainText('跳', { timeout: 10000 });
+    await expect(page.locator('#dp-status')).toContainText('hop', { timeout: 10000 });
 
     await page.locator('#dp-clear').click();
     await expect(page.locator('#dp-status')).toHaveText('');
     await expect(page.locator('#dp-list')).toBeHidden();
     await expect(page.locator('#dp-clear')).toBeHidden();
-    await expect(page.locator('#dp-start')).toHaveText('起点：未选择');
-    await expect(page.locator('#dp-end')).toContainText('未选择');
+    await expect(page.locator('#dp-start')).toHaveText('Start: None');
+    await expect(page.locator('#dp-end')).toContainText('None');
   });
 
   test('start == end shows error, no crash', async ({ page }) => {
     await selectStartEnd(page, 'p-A', 'p-A');
     await page.locator('#dp-calc').click();
-    await expect(page.locator('#dp-status')).toContainText('起终点相同', { timeout: 5000 });
+    await expect(page.locator('#dp-status')).toContainText('same', { timeout: 5000 });
   });
 
   test('portal list items are clickable (pans map)', async ({ page }) => {
     await selectStartEnd(page, 'p-A', 'p-C');
     await page.locator('#dp-calc').click();
-    await expect(page.locator('#dp-status')).toContainText('跳', { timeout: 10000 });
+    await expect(page.locator('#dp-status')).toContainText('hop', { timeout: 10000 });
     await page.locator('#dp-list li').first().click();
   });
 });
@@ -263,14 +261,26 @@ test.describe('Drone Planner – map zoom guard', () => {
     await page.evaluate(() => window.map.setView([0, 0.004], 13));
     await page.addScriptTag({ content: PLUGIN_CODE });
     await page.evaluate(() => {
-      if (!document.getElementById('drone-planner-panel') && window.bootPlugins.length) {
+      if (!document.getElementById('drone-planner-float') && window.bootPlugins.length) {
         window.bootPlugins[0]();
       }
     });
-    await page.waitForSelector('#drone-planner-panel');
+    await page.waitForSelector('#drone-planner-float');
 
     await selectStartEnd(page, 'p-A', 'p-C');
     await page.locator('#dp-calc').click();
-    await expect(page.locator('#dp-status')).toContainText('15 级', { timeout: 3000 });
+    await expect(page.locator('#dp-status')).toContainText('level 15', { timeout: 3000 });
+  });
+});
+
+test.describe('Drone Planner – duplicate load guard', () => {
+  test('calling wrapper twice does not create two panels', async ({ page }) => {
+    await loadPlugin(page);
+    // Inject plugin code a second time
+    await page.addScriptTag({ content: PLUGIN_CODE });
+    await page.evaluate(() => {
+      if (window.bootPlugins.length > 1) window.bootPlugins[1]();
+    });
+    await expect(page.locator('#drone-planner-float')).toHaveCount(1);
   });
 });
