@@ -488,7 +488,11 @@ function wrapper(plugin_info) {
         const label   = isStart ? 'S' : isEnd ? 'E' : String(i);
         const cls     = isStart ? 'drone-start-label' : isEnd ? 'drone-end-label' : '';
         const marker  = L.marker([node.lat, node.lng], { icon: this._makeHopIcon(label, cls) });
-        marker.on('click', () => window.map.panTo([node.lat, node.lng]));
+        marker.on('click', () => {
+          window.map.panTo([node.lat, node.lng]);
+          window.selectPortal(node.guid, 'click');
+          window.renderPortalDetails(node.guid);
+        });
         this._layer.addLayer(marker);
       });
 
@@ -506,7 +510,11 @@ function wrapper(plugin_info) {
         li.dataset.lat = n.lat;
         li.dataset.lng = n.lng;
         li.textContent = `${lbl}. ${n.title}${distStr}`;
-        li.addEventListener('click', () => window.map.panTo([n.lat, n.lng]));
+        li.addEventListener('click', () => {
+          window.map.panTo([n.lat, n.lng]);
+          window.selectPortal(n.guid, 'click');
+          window.renderPortalDetails(n.guid);
+        });
         list.appendChild(li);
       });
 
