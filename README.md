@@ -21,7 +21,7 @@ An [IITC](https://iitc.app/) (Ingress Intel Total Conversion) userscript plugin 
 
 1. Install Firefox and the [Tampermonkey](https://www.tampermonkey.net/) extension
 2. Install [IITC](https://iitc.app/)
-3. In Tampermonkey, create a new script and paste the contents of `drone-planner.user.js`, then save
+3. Click **[Install Script](https://raw.githubusercontent.com/shunix/iitc-drone-path-planner/main/drone-planner.user.js)** — Tampermonkey will prompt you to install it
 4. Open [Ingress Intel](https://intel.ingress.com/) — the plugin loads automatically with IITC
 
 ---
