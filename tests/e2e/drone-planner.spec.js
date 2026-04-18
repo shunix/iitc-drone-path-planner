@@ -209,7 +209,7 @@ test.describe('Drone Planner – path finding', () => {
     await expect(page.locator('#dp-status')).toContainText('hop', { timeout: 10000 });
     expect(await page.locator('#dp-status').textContent()).toMatch(/2\s*hop/);
 
-    await expect(page.locator('.leaflet-overlay-pane path[stroke="#f4c20d"]')).toBeVisible();
+    await expect(page.locator('.leaflet-overlay-pane path[stroke="#e8ff00"]')).toBeVisible();
     await expect(page.locator('#dp-list li')).toHaveCount(3);
     await expect(page.locator('#dp-clear')).toBeVisible();
   });

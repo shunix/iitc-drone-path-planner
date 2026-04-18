@@ -2,12 +2,8 @@
 // @id             drone-path-planner
 // @name           IITC Plugin: Drone Path Planner
 // @category       Layer
-// @version        0.2.0
+// @version        0.3.0
 // @description    Calculates minimum-hop drone routes between two portals
-// @include        https://intel.ingress.com/*
-// @include        https://intel-x.ingress.com/*
-// @match          https://intel.ingress.com/*
-// @match          https://intel-x.ingress.com/*
 // @grant          none
 // ==/UserScript==
 
@@ -463,7 +459,7 @@ function wrapper(plugin_info) {
     },
 
     _buildPanel() {
-      // Floating panel appended to body (not sidebar)
+      if (document.getElementById('drone-planner-float')) return;
       const panel = document.createElement('div');
       panel.id = 'drone-planner-float';
       panel.innerHTML = `
@@ -555,7 +551,29 @@ function wrapper(plugin_info) {
       if (nodes.length < 2) return;
 
       const latLngs = nodes.map(n => [n.lat, n.lng]);
-      this._layer.addLayer(L.polyline(latLngs, { color: '#f4c20d', weight: 3, opacity: 0.9 }));
+      this._layer.addLayer(L.polyline(latLngs, { color: '#e8ff00', weight: 4, opacity: 0.9 }));
+
+      // Segment midpoint arrows + distance labels
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const a = nodes[i], b = nodes[i + 1];
+        const angle = -Math.atan2(b.lat - a.lat, b.lng - a.lng) * 180 / Math.PI;
+        const dist = Math.round(haversine(a, b));
+        const arrowIcon = L.divIcon({
+          className: '',
+          html: `<div style="text-align:center;line-height:1;pointer-events:none">` +
+                `<div style="transform:rotate(${angle}deg);color:#e8ff00;font-size:16px;` +
+                `text-shadow:0 0 3px #000,0 0 3px #000">▶</div>` +
+                `<div style="color:#e8ff00;font-size:10px;font-weight:bold;` +
+                `text-shadow:0 0 2px #000,0 0 2px #000;white-space:nowrap;margin-top:-2px">${dist}m</div>` +
+                `</div>`,
+          iconSize: [40, 28],
+          iconAnchor: [20, 14]
+        });
+        this._layer.addLayer(L.marker(
+          [(a.lat + b.lat) / 2, (a.lng + b.lng) / 2],
+          { icon: arrowIcon, interactive: false }
+        ));
+      }
 
       nodes.forEach((node, i) => {
         const isStart = i === 0;
@@ -633,6 +651,8 @@ function wrapper(plugin_info) {
 
   // ─── Setup ────────────────────────────────────────────────────────────────
   const setup = function() {
+    if (P._initialized) return;
+    P._initialized = true;
     P.Renderer.init();
     P.Selection.init();
     console.log('[DronePathPlanner] loaded');

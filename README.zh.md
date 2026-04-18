@@ -19,10 +19,14 @@
 
 ## 安装方法
 
-1. 安装 Firefox 及 [Tampermonkey](https://www.tampermonkey.net/) 扩展
-2. 安装 [IITC](https://iitc.app/)
-3. 点击**[安装脚本](https://raw.githubusercontent.com/shunix/iitc-drone-path-planner/main/drone-planner.user.js)** — Tampermonkey 会弹出安装提示
-4. 打开 [Ingress Intel](https://intel.ingress.com/) — 插件将随 IITC 自动加载
+1. 安装 Firefox 及 [IITC-CE](https://iitc.app/)
+2. 打开 IITC 设置面板 → **External plugins（外部插件）** 标签页
+3. 在输入框中粘贴脚本地址：
+   ```
+   https://raw.githubusercontent.com/shunix/iitc-drone-path-planner/main/drone-planner.user.js
+   ```
+4. 点击 **Add** — IITC 将在下次页面加载时自动载入插件
+5. 打开 [Ingress Intel](https://intel.ingress.com/)
 
 ---
 

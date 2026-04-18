@@ -19,10 +19,14 @@ An [IITC](https://iitc.app/) (Ingress Intel Total Conversion) userscript plugin 
 
 ## Installation
 
-1. Install Firefox and the [Tampermonkey](https://www.tampermonkey.net/) extension
-2. Install [IITC](https://iitc.app/)
-3. Click **[Install Script](https://raw.githubusercontent.com/shunix/iitc-drone-path-planner/main/drone-planner.user.js)** — Tampermonkey will prompt you to install it
-4. Open [Ingress Intel](https://intel.ingress.com/) — the plugin loads automatically with IITC
+1. Install Firefox and [IITC-CE](https://iitc.app/)
+2. Open the IITC settings panel → **External plugins** tab
+3. Paste the script URL into the field:
+   ```
+   https://raw.githubusercontent.com/shunix/iitc-drone-path-planner/main/drone-planner.user.js
+   ```
+4. Click **Add** — IITC will load the plugin automatically on the next page load
+5. Open [Ingress Intel](https://intel.ingress.com/)
 
 ---
 
@@ -31,15 +35,15 @@ An [IITC](https://iitc.app/) (Ingress Intel Total Conversion) userscript plugin 
 1. Zoom the map to **level 15 or above** (IITC loads portal data at this zoom level)
 2. **Click** any portal on the map — its details appear in the sidebar
 3. At the bottom of the portal details panel, two links appear:
-   - `✈ 设为 Drone 起点` — set as **start** portal (marked **S** on the map)
-   - `✈ 设为 Drone 终点` — set as **end** portal (marked **E** on the map)
-4. Once both are set, the **Drone Path Planner** panel shows a **开始计算** button
+   - `✈ Set as Drone Start` — set as **start** portal (marked **S** on the map)
+   - `✈ Set as Drone End` — set as **end** portal (marked **E** on the map)
+4. Once both are set, the **Drone Path Planner** panel shows a **Calculate** button
 5. Click it to start the search:
    - Live status updates during search (pan count shown)
    - On success: hop count and total distance displayed; yellow path drawn on the map
    - On failure: gap location highlighted in red
 6. Click any portal in the result list to pan the map and open its details
-7. Click **清除路径** to reset
+7. Click **Clear** to reset
 
 ---
 
